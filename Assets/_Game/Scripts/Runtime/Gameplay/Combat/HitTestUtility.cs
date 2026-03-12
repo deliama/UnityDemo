@@ -2,8 +2,13 @@ using UnityEngine;
 
 namespace GameDemo.Runtime.Gameplay.Combat
 {
+    /// <summary>
+    /// 手写数学判定工具：圆形、扇形、AABB，不依赖 Unity 物理 Trigger。
+    /// 用于技能范围、普攻判定等，便于面试讲解向量与几何。
+    /// </summary>
     public static class HitTestUtility
     {
+        /// <summary> 点在水平面圆内（忽略 Y，用 sqrMagnitude 避免开方）。 </summary>
         public static bool IsPointInCircle(Vector3 center, float radius, Vector3 point)
         {
             var delta = point - center;
@@ -11,6 +16,10 @@ namespace GameDemo.Runtime.Gameplay.Combat
             return delta.sqrMagnitude <= radius * radius;
         }
 
+        /// <summary>
+        /// 点在水平面扇形内：先判距离，再判方向（forward 与 toPoint 夹角 ≤ halfAngleDeg）。
+        /// 使用点积与 cos 阈值比较，避免 atan2。
+        /// </summary>
         public static bool IsPointInSector(
             Vector3 origin,
             Vector3 forward,
@@ -38,6 +47,7 @@ namespace GameDemo.Runtime.Gameplay.Combat
             return dot >= cosThreshold;
         }
 
+        /// <summary> 点是否在轴对齐包围盒内。 </summary>
         public static bool IsPointInAabb(Vector3 min, Vector3 max, Vector3 point)
         {
             return point.x >= min.x &&
