@@ -28,6 +28,7 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character
         //角色状态
         public bool IsGrounded;
         public bool HitRequested;
+        public bool DeadRequested;
         public bool IsHit;
         public bool IsDead;
 

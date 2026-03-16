@@ -25,6 +25,9 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character.Combat
             BB.CanBeInterrupted = true;
             BB.DesiredMoveDirection = Vector3.zero;
             BB.MoveSpeed = 0f;
+            
+            Ctx?.Animator.SetMoveSpeed(0);
+            Ctx?.Animator.PlayAttack();
         }
 
         public bool IsFinished()

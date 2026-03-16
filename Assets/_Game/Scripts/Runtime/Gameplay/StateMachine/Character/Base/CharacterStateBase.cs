@@ -9,6 +9,12 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character
 
         public string Name { get; }
 
+        /// <summary>
+        /// 是否在 Tick 中累加 Blackboard.StateTime。
+        /// 叶子状态默认 true；父状态（组合状态）可覆写为 false，避免子状态重复计时。
+        /// </summary>
+        protected virtual bool TrackStateTime => true;
+
         protected CharacterStateBase(string name, CharacterStateContext context)
         {
             Name = name;
@@ -37,7 +43,7 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character
                 Ctx.DeltaTime = deltaTime;
             }
 
-            if (BB != null)
+            if (BB != null && TrackStateTime)
             {
                 BB.StateTime += deltaTime;
             }

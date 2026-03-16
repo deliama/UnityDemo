@@ -29,12 +29,15 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character.Grounded
             BB.DesiredMoveDirection = moveDirection;
             //BB.MoveSpeed = input.magnitude;
             BB.MoveSpeed = Mathf.Clamp01(input.magnitude);
+            Ctx?.Animator.SetMoveSpeed(BB.MoveSpeed);
+            Ctx?.Motor?.Tick(input, deltaTime);
         }
 
         protected override void OnStateExit()
         {
             BB.MoveSpeed = 0f;
             BB.DesiredMoveDirection = Vector3.zero;
+            Ctx?.Animator?.SetMoveSpeed(0f);
         }
     }
 }

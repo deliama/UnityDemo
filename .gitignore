@@ -11,6 +11,8 @@
 
 # Asset pipeline and caches
 Assets/AssetStoreTools*
+Assets/_Game/Char
+Assets/KAWAII_ANIMATIOMS_100
 
 # IDE and editor files
 .vs/

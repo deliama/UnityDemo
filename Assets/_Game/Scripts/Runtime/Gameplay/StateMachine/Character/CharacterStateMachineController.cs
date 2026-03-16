@@ -4,6 +4,7 @@ using UnityEngine.InputSystem;
 using GameDemo.Runtime.Gameplay.Character;
 using GameDemo.Runtime.Gameplay.StateMachine.Character.Combat;
 using GameDemo.Runtime.Gameplay.StateMachine.Character.Grounded;
+using GameDemo.Runtime.Gameplay.Cameras;
 
 namespace GameDemo.Runtime.Gameplay.StateMachine.Character
 {
@@ -15,6 +16,8 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character
 
         [Header("Movement")]
         [SerializeField] private float moveThreshold = 0.01f;
+        [SerializeField] private float moveSpeed = 5f;
+        [SerializeField] private float rotationSpeed = 100f;
 
         [Header("Debug")]
         [SerializeField] private float hitDuration = 0.35f;
@@ -24,9 +27,15 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character
         [SerializeField] private float attackRecoveryDuration = 0.20f;
 
         [Header("Runtime")]
-        [SerializeField] private string currentStateName;
+        [SerializeField] private string currentParentStateName;
+        [SerializeField] private string currentLeafStateName;
         [SerializeField] private Vector2 currentMoveInput;
         [SerializeField] private bool currentIsHit;
+        [SerializeField] private bool currentIsDead;
+        
+        [Header("References")]
+        [SerializeField] private Animator animator;
+        [SerializeField] private PlayerCameraController cameraController;
 
         private CharacterStateBlackboard _blackboard;
         private CharacterStateContext _context;
@@ -34,12 +43,11 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character
 
         private CharacterInputAdapter _inputAdapter;
 
-        private IdleState _idleState;
-        private MoveState _moveState;
+        private GroundedState _groundedState;
         private HitState _hitState;
-        private AttackStartupState _attackStartupState;
-        private AttackActiveState _attackActiveState;
-        private AttackRecoveryState _attackRecoveryState;
+        private DeadState _deadState;
+        private AttackState _attackState;
+        private float _sqrMoveThreshold;
 
         public string CurrentStateName => _machine?.CurrentStateName ?? "None";
         public CharacterStateBlackboard Blackboard => _blackboard;
@@ -73,11 +81,23 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character
         {
             _blackboard = new CharacterStateBlackboard();
 
+            if (animator == null)
+            {
+                animator = GetComponentInChildren<Animator>();
+            }
+
+            if (cameraController == null)
+            {
+                cameraController = FindFirstObjectByType<PlayerCameraController>();
+            }
+            
             _context = new CharacterStateContext
             {
                 Owner = gameObject,
                 Transform = transform,
-                Blackboard = _blackboard
+                Blackboard = _blackboard,
+                Animator = new CharacterAnimatorController(animator),
+                Motor = new CharacterMotor(transform, cameraController,moveSpeed,rotationSpeed)
             };
 
             if (enableInput)
@@ -95,101 +115,64 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character
 
         private void BuildStates()
         {
-            _idleState = new IdleState(_context);
-            _moveState = new MoveState(_context);
+            var threshold = Mathf.Max(0f, moveThreshold);
+            _sqrMoveThreshold = threshold * threshold;
+
+            _groundedState = new GroundedState(_context, threshold);
             _hitState = new HitState(_context, hitDuration);
-            _attackStartupState = new AttackStartupState(_context, attackStartupDuration);
-            _attackActiveState = new AttackActiveState(_context, attackActiveDuration);
-            _attackRecoveryState = new AttackRecoveryState(_context, attackRecoveryDuration);
+            _deadState = new DeadState(_context);
+            _attackState = new AttackState(
+                _context,
+                attackStartupDuration,
+                attackActiveDuration,
+                attackRecoveryDuration);
         }
 
         private void BuildMachine()
         {
             _machine = new HfsmMachine();
 
-            _machine.Register(_idleState);
-            _machine.Register(_moveState);
+            _machine.Register(_groundedState);
             _machine.Register(_hitState);
-            _machine.Register(_attackStartupState);
-            _machine.Register(_attackActiveState);
-            _machine.Register(_attackRecoveryState);
+            _machine.Register(_deadState);
+            _machine.Register(_attackState);
 
-            _machine.SetDefaultState(CharacterStateIds.Idle);
-
-            float threshold = Mathf.Max(0f, moveThreshold);
-            float sqrThreshold = threshold * threshold;
+            _machine.SetDefaultState(CharacterStateIds.Grounded);
 
             _machine.AddTransition(
-                CharacterStateIds.Idle,
-                CharacterStateIds.Move,
-                new FuncCondition(() => !_blackboard.IsHit && !_blackboard.AttackPressed && _blackboard.MoveInput.sqrMagnitude > sqrThreshold)
-            );
-
-            _machine.AddTransition(
-                CharacterStateIds.Move,
-                CharacterStateIds.Idle,
-                new FuncCondition(() => !_blackboard.IsHit && !_blackboard.AttackPressed && _blackboard.MoveInput.sqrMagnitude <= sqrThreshold)
-            );
-
-            _machine.AddTransition(
-                CharacterStateIds.Idle,
-                CharacterStateIds.AttackStartup,
+                CharacterStateIds.Grounded,
+                CharacterStateIds.Attack,
                 new FuncCondition(() => _blackboard.AttackPressed),
                 priority: 10
             );
 
             _machine.AddTransition(
-                CharacterStateIds.Move,
-                CharacterStateIds.AttackStartup,
-                new FuncCondition(() => _blackboard.AttackPressed),
-                priority: 10
+                CharacterStateIds.Attack,
+                CharacterStateIds.Grounded,
+                new FuncCondition(() => _attackState.ShouldExitToMove(_sqrMoveThreshold))
             );
 
             _machine.AddTransition(
-                CharacterStateIds.AttackStartup,
-                CharacterStateIds.AttackActive,
-                new FuncCondition(() => _attackStartupState.IsFinished())
+                CharacterStateIds.Attack,
+                CharacterStateIds.Grounded,
+                new FuncCondition(() => _attackState.ShouldExitToIdle(_sqrMoveThreshold))
             );
 
-            _machine.AddTransition(
-                CharacterStateIds.AttackActive,
-                CharacterStateIds.AttackRecovery,
-                new FuncCondition(() => _attackActiveState.IsFinished())
-            );
-
-            _machine.AddTransition(
-                CharacterStateIds.AttackRecovery,
-                CharacterStateIds.AttackStartup,
-                new FuncCondition(() => _blackboard.AttackPressed)
-            );
-
-            _machine.AddTransition(
-                CharacterStateIds.AttackRecovery,
-                CharacterStateIds.Move,
-                new FuncCondition(() =>
-                    !_blackboard.AttackPressed &&
-                    _attackRecoveryState.IsFinished() &&
-                    _blackboard.MoveInput.sqrMagnitude > sqrThreshold)
-            );
-
-            _machine.AddTransition(
-                CharacterStateIds.AttackRecovery,
-                CharacterStateIds.Idle,
-                new FuncCondition(() =>
-                    !_blackboard.AttackPressed &&
-                    _attackRecoveryState.IsFinished() &&
-                    _blackboard.MoveInput.sqrMagnitude <= sqrThreshold)
+            _machine.AddAnyTransition(
+                CharacterStateIds.Dead,
+                new FuncCondition(() => _blackboard.DeadRequested || _blackboard.IsDead),
+                priority: 1000
             );
 
             _machine.AddAnyTransition(
                 CharacterStateIds.Hit,
-                new FuncCondition(() => _blackboard.HitRequested),
+                new FuncCondition(() => !_blackboard.IsDead && _blackboard.HitRequested),
                 priority: 100
             );
 
             _machine.AddTransition(
                 CharacterStateIds.Hit,
-                CharacterStateIds.Idle,
+                CharacterStateIds.Grounded,
                 new FuncCondition(() => _hitState.IsFinished())
             );
         }
@@ -200,6 +183,7 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character
             {
                 _blackboard.MoveInput = Vector2.zero;
                 _blackboard.HitRequested = false;
+                _blackboard.DeadRequested = false;
                 _blackboard.AttackPressed = false;
                 return;
             }
@@ -208,15 +192,38 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character
 
             _blackboard.MoveInput = _inputAdapter.MoveInput;
             _blackboard.HitRequested = _inputAdapter.HitPressedThisFrame;
+            _blackboard.DeadRequested = _inputAdapter.DeadPressedThisFrame;
             _blackboard.AttackPressed = _inputAdapter.AttackPressedThisFrame;
         }
 
         private void SyncDebugFields()
         {
-            currentStateName = _machine.CurrentStateName;
+            currentParentStateName = _machine.CurrentStateName;
+            currentLeafStateName = ResolveLeafStateName();
             currentMoveInput = _blackboard.MoveInput;
             currentIsHit = _blackboard.IsHit;
+            currentIsDead = _blackboard.IsDead;
             attackPressed = _blackboard.AttackPressed;
+        }
+
+        private string ResolveLeafStateName()
+        {
+            if (_machine == null)
+            {
+                return "None";
+            }
+
+            if (_machine.CurrentStateName == CharacterStateIds.Grounded)
+            {
+                return _groundedState.ActiveChildStateName;
+            }
+
+            if (_machine.CurrentStateName == CharacterStateIds.Attack)
+            {
+                return _attackState.ActiveChildStateName;
+            }
+
+            return _machine.CurrentStateName;
         }
     }
 }

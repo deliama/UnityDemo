@@ -21,6 +21,9 @@ namespace GameDemo.Runtime.Gameplay.StateMachine.Character
             BB.CanRotate = false;
             BB.DesiredMoveDirection = Vector3.zero;
             BB.MoveSpeed = 0f;
+            
+            Ctx?.Animator.SetMoveSpeed(0);
+            Ctx?.Animator.PlayHit();
         }
 
         protected override void OnStateTick(float deltaTime)
